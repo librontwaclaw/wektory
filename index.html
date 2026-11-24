@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Generator wektorów sił – Dynamika 6</title>
+<style>
+  body { font-family: Arial, sans-serif; text-align: center; background: #f4f6f9; margin: 20px; color: #1f2937; }
+  h2 { color: #1e3a8a; margin-bottom: 5px; }
+  .subtitle { color: #4b5563; margin-top: 0; font-size: 14px; }
+  .controls { background: white; display: inline-flex; align-items: center; gap: 18px; padding: 12px 22px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); margin: 10px 0 20px 0; flex-wrap: wrap; justify-content: center; }
+  .slider-group { display: flex; align-items: center; gap: 10px; font-weight: bold; font-size: 15px; }
+  input[type=range] { width: 180px; cursor: pointer; }
+  .nr-badge { background: #2563eb; color: white; padding: 4px 12px; border-radius: 6px; font-size: 16px; min-width: 24px; }
+  button { padding: 9px 15px; font-size: 14px; font-weight: bold; cursor: pointer; border: none; border-radius: 6px; transition: 0.2s; }
+  .btn-reshuffle { background: #4f46e5; color: white; }
+  .btn-reshuffle:hover { background: #4338ca; }
+  .grid { display: grid; grid-template-columns: repeat(3, 285px); gap: 20px; justify-content: center; }
+  @media (max-width: 920px) { .grid { grid-template-columns: repeat(2, 285px); } }
+  @media (max-width: 620px) { .grid { grid-template-columns: 285px; } }
+  .card { background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); position: relative; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .card-title { font-weight: bold; font-size: 15px; color: #111827; }
+  .scale-badge { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; padding: 2px 8px; border-radius: 5px; font-size: 12px; font-weight: bold; }
+  canvas { border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; }
+  .ans-text { font-size: 12.5px; color: #065f46; font-weight: bold; margin-top: 8px; min-height: 54px; line-height: 1.4; background: #ecfdf5; padding: 6px; border-radius: 5px; display: none; text-align: left; }
+  .ans-text.visible { display: block; }
+  .type-tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #d1fae5; color: #065f46; margin-bottom: 3px; }
+</style>
+</head>
+<body>
+
+<h2>Składanie wektorów sił – E-laboratorium</h2>
+<p class="subtitle">Wybierz swój numer z dziennika. Zwróć uwagę na indywidualną skalę kratki w rogu każdego układu.</p>
+
+<div class="controls">
+  <div class="slider-group">
+    <label for="journalNr">Numer z dziennika:</label>
+    <input type="range" id="journalNr" min="1" max="36" value="1" oninput="updateView()">
+    <span class="nr-badge" id="nrDisplay">1</span>
+  </div>
+  <button class="btn-reshuffle" onclick="reshuffleSession()">🎲 Losuj nowy układ kratek</button>
+</div>
+
+<div class="grid" id="board"></div>
+
+<script>
+let showAns = false;
+let currentSystems = [];
+let sessionSeed = (Date.now() ^ Math.floor(Math.random() * 1000000000)) >>> 0;
+
+function createRng(seed) {
+  let s = seed >>> 0;
+  return function() {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randInt(rng, min, max) {
+  return Math.floor(rng() * (max - min + 1)) + min;
+}
+
+function shuffleArray(rng, arr) {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function generateForStudent(nr) {
+  const mixedSeed = (sessionSeed ^ Math.imul(nr, 2654435761)) >>> 0;
+  const rng = createRng(mixedSeed);
+  const systems = [];
+
+  // 2 układy z zerowym wynikiem (równowaga)
+  for (let k = 0; k < 2; k++) {
+    let v = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      let x1 = randInt(rng, -3, 3), y1 = randInt(rng, -3, 3);
+      if (x1 === 0 && y1 === 0) continue;
+      let x2 = randInt(rng, -3, 3), y2 = randInt(rng, -3, 3);
+      if (x2 === 0 && y2 === 0) continue;
+      let x3 = -(x1 + x2), y3 = -(y1 + y2);
+      if (Math.abs(x3) <= 3 && Math.abs(y3) <= 3 && !(x3 === 0 && y3 === 0)) {
+        v = [[x1, y1], [x2, y2], [x3, y3]];
+        break;
+      }
+    }
+    if (!v) v = [[2, 0], [0, -1], [-2, 1]];
+    systems.push({ type: "Równowaga (Fw = 0)", vectors: v });
+  }
+
+  // 2 układy z wektorem wypadkowym po jednej linii (poziomo lub pionowo)
+  for (let k = 0; k < 2; k++) {
+    let v = null;
+    const horizontal = (k % 2 === 0);
+    for (let attempt = 0; attempt < 50; attempt++) {
+      let x1 = randInt(rng, -3, 3), y1 = randInt(rng, -3, 3);
+      if (x1 === 0 && y1 === 0) continue;
+      let x2 = randInt(rng, -3, 3), y2 = randInt(rng, -3, 3);
+      if (x2 === 0 && y2 === 0) continue;
+      let x3, y3;
+      if (horizontal) {
+        y3 = -(y1 + y2);
+        x3 = randInt(rng, -3, 3);
+      } else {
+        x3 = -(x1 + x2);
+        y3 = randInt(rng, -3, 3);
+      }
+      const fwx = x1 + x2 + x3;
+      const fwy = y1 + y2 + y3;
+      if (Math.abs(x3) <= 3 && Math.abs(y3) <= 3 && !(x3 === 0 && y3 === 0) &&
+          Math.abs(fwx) <= 3 && Math.abs(fwy) <= 3 && (fwx !== 0 || fwy !== 0)) {
+        v = [[x1, y1], [x2, y2], [x3, y3]];
+        break;
+      }
+    }
+    if (!v) v = horizontal ? [[2, 1], [1, 2], [0, -3]] : [[-2, 2], [2, 2], [0, -1]];
+    systems.push({ type: "Wypadkowa w jednej linii", vectors: v });
+  }
+
+  // 2 układy pod kątem prostym (składowe Fwx != 0 i Fwy != 0)
+  for (let k = 0; k < 2; k++) {
+    let v = null;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      let x1 = randInt(rng, -3, 3), y1 = randInt(rng, -3, 3);
+      if (x1 === 0 && y1 === 0) continue;
+      let x2 = randInt(rng, -3, 3), y2 = randInt(rng, -3, 3);
+      if (x2 === 0 && y2 === 0) continue;
+      let x3 = randInt(rng, -3, 3), y3 = randInt(rng, -3, 3);
+      if (x3 === 0 && y3 === 0) continue;
+      const fwx = x1 + x2 + x3;
+      const fwy = y1 + y2 + y3;
+      if (fwx !== 0 && fwy !== 0 && Math.abs(fwx) <= 3 && Math.abs(fwy) <= 3) {
+        v = [[x1, y1], [x2, y2], [x3, y3]];
+        break;
+      }
+    }
+    if (!v) v = [[3, 1], [1, 2], [-1, 1]];
+    systems.push({ type: "Składowe pod kątem prostym", vectors: v });
+  }
+
+  // Tasowanie kolejności 6 układów oraz niezależne tasowanie 6 wartości kratek
+  const shuffledSystems = shuffleArray(rng, systems);
+  const scalesPool = [1, 2, 4, 5, 10, 20];
+  const shuffledScales = shuffleArray(rng, scalesPool);
+
+  return shuffledSystems.map((sys, idx) => ({
+    ...sys,
+    scale: shuffledScales[idx]
+  }));
+}
+
+function drawArrow(ctx, fromX, fromY, toX, toY, color, width) {
+  const headlen = 10;
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  const angle = Math.atan2(dy, dx);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(fromX, fromY);
+  ctx.lineTo(toX, toY);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(toX, toY);
+  ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawSystem(canvas, vectors) {
+  const ctx = canvas.getContext('2d');
+  const size = 260;
+  const step = size / 8;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  ctx.clearRect(0, 0, size, size);
+
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 8; i++) {
+    ctx.beginPath(); ctx.moveTo(i * step, 0); ctx.lineTo(i * step, size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * step); ctx.lineTo(size, i * step); ctx.stroke();
+  }
+
+  ctx.fillStyle = '#d1d5db';
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 2;
+  ctx.fillRect(cx - step, cy - step, step * 2, step * 2);
+  ctx.strokeRect(cx - step, cy - step, step * 2, step * 2);
+
+  vectors.forEach(([vx, vy]) => {
+    drawArrow(ctx, cx, cy, cx + vx * step, cy - vy * step, '#dc2626', 3);
+  });
+
+  ctx.fillStyle = '#dc2626';
+  ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+
+  const fwx = vectors.reduce((acc, v) => acc + v[0], 0);
+  const fwy = vectors.reduce((acc, v) => acc + v[1], 0);
+  if (showAns && (fwx !== 0 || fwy !== 0)) {
+    drawArrow(ctx, cx, cy, cx + fwx * step, cy - fwy * step, '#2563eb', 3.5);
+  }
+}
+
+function updateView() {
+  const nr = parseInt(document.getElementById('journalNr').value, 10);
+  document.getElementById('nrDisplay').textContent = nr;
+  currentSystems = generateForStudent(nr);
+  render();
+}
+
+function reshuffleSession() {
+  sessionSeed = (Date.now() ^ Math.floor(Math.random() * 1000000000)) >>> 0;
+  updateView();
+}
+
+// Skrót klawiszowy dla nauczyciela: Ctrl + Shift + K (lub Alt + Shift + K)
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.altKey) && e.shiftKey && e.code === 'KeyK') {
+    e.preventDefault();
+    showAns = !showAns;
+    render();
+  }
+});
+
+function render() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+
+  currentSystems.forEach((sys, idx) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const header = document.createElement('div');
+    header.className = 'card-header';
+
+    const title = document.createElement('span');
+    title.className = 'card-title';
+    title.textContent = `Układ ${idx + 1}`;
+
+    const scaleBadge = document.createElement('span');
+    scaleBadge.className = 'scale-badge';
+    scaleBadge.textContent = `1 kratka = ${sys.scale} N`;
+
+    header.appendChild(title);
+    header.appendChild(scaleBadge);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 260;
+    canvas.height = 260;
+    drawSystem(canvas, sys.vectors);
+
+    const ans = document.createElement('div');
+    ans.className = 'ans-text' + (showAns ? ' visible' : '');
+    if (showAns) {
+      const s = sys.scale;
+      const coords = sys.vectors.map((v, i) => `F${i+1}=(${v[0]*s}; ${v[1]*s})`).join(', ');
+      const fwx = sys.vectors.reduce((acc, v) => acc + v[0], 0) * s;
+      const fwy = sys.vectors.reduce((acc, v) => acc + v[1], 0) * s;
+      const fw = Math.sqrt(fwx * fwx + fwy * fwy);
+      const fwStr = Number.isInteger(fw) ? fw : fw.toFixed(1);
+      ans.innerHTML = `<span class="type-tag">${sys.type}</span><br>${coords}<br>Fwx = ${fwx} N, Fwy = ${fwy} N &rarr; <b>Fw = ${fwStr} N</b>`;
+    }
+
+    card.appendChild(header);
+    card.appendChild(canvas);
+    card.appendChild(ans);
+    board.appendChild(card);
+  });
+}
+
+updateView();
+</script>
+</body>
+</html>
