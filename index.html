@@ -30,7 +30,8 @@
 <body>
 
 <h2>Składanie wektorów sił – E-laboratorium</h2>
-<p class="subtitle">Wybierz swój numer z dziennika. Zwróć uwagę na indywidualną skalę kratki w rogu każdego układu.</p>
+<center>&copy Wacław Libront * Bobowa 2026</center>
+
 
 <div class="controls">
   <div class="slider-group">
@@ -38,7 +39,7 @@
     <input type="range" id="journalNr" min="1" max="36" value="1" oninput="updateView()">
     <span class="nr-badge" id="nrDisplay">1</span>
   </div>
-  <button class="btn-reshuffle" onclick="reshuffleSession()">🎲 Losuj nowy układ kratek</button>
+  <button class="btn-reshuffle" onclick="reshuffleSession()">🎲 Losuj</button>
 </div>
 
 <div class="grid" id="board"></div>
@@ -224,7 +225,6 @@ function reshuffleSession() {
   updateView();
 }
 
-// Skrót klawiszowy dla nauczyciela: Ctrl + Shift + K (lub Alt + Shift + K)
 document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.altKey) && e.shiftKey && e.code === 'KeyK') {
     e.preventDefault();
